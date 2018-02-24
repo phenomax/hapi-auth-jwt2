@@ -10,7 +10,8 @@ import * as path from 'path';
 /**
  * internal dependencies
  */
-import { extract, isValid, customOrDefaultKey } from './extract';
+import { extract, isValid, customOrDefaultKey, isHeadless } from './extract';
+import { ServerRegisterOptions, ServerRegisterPluginObject, Server, ResponseToolkit } from 'hapi';
 const pkg = JSON.parse(String(fs.readFileSync(path.join(__dirname, 'package.json'))));
 
 /**
@@ -25,9 +26,10 @@ const pkg = JSON.parse(String(fs.readFileSync(path.join(__dirname, 'package.json
 export default {
   name: 'hapi-auth-jwt2',
   version: '7.5.0',
-  register: (server, options) => {
-    server.auth.scheme('jwt', implementation); // hapijs.com/api#serverauthapi
+  register: (plugin: Plugin) => {
+    plugin.auth.scheme('jwt', implementation); // hapijs.com/api#serverauthapi
   },
+  pkg,
 };
 
 /**
@@ -57,13 +59,13 @@ const isArray = (variable: any): boolean => {
  * @returns {Function} authenicate - we return the authenticate method after
  * registering the plugin as that's the method that gets called for each route.
  */
-const implementation = (server: any, options: any): any => {
+const implementation = (server: Server, options: any): any => {
   assert(options, 'options are required for jwt auth scheme'); // pre-auth checks
-  assert(options.validateFunc
-    || options.verifyFunc, 'validateFunc OR verifyFunc function is required!');
+  assert(options.validate
+    || options.verify, 'validate OR verify function is required!');
 
   // allow custom error raising or default to Boom if no errorFunc is defined
-  function raiseError(errorType, message, scheme?, attributes?) {
+  function raiseError(errorType: string, message: string, scheme?: any, attributes?: any) {
     let errorContext = {
       errorType,
       message,
@@ -99,118 +101,103 @@ const implementation = (server: any, options: any): any => {
      * @returns {Boolean} if the JWT is valid we return a credentials object
      * otherwise throw an error to inform the app & client of unauthorized req.
      */
-    authenticate: (request, h) => {
-      const token = extract(request, options); // extract token Header/Cookie/Query
+    authenticate: async (request: Request, h: ResponseToolkit) => {
+      let token = extract(request, options); // extract token Header/Cookie/Query
       const tokenType = options.tokenType || 'Token'; // see: https://git.io/vXje9
       let decoded;
-      let keyFunc;
 
       if (!token) {
-        return raiseError('unauthorized', null, tokenType);
+        return h.unauthenticated(raiseError('unauthorized', null, tokenType), { credentials: tokenType });
       }
 
-      if (!isValid(token)) { // quick check for validity of token format
-        return raiseError('unauthorized', 'Invalid token format', tokenType);
-      } // verification is done later, but we want to avoid decoding if malformed
+      // If we are receiving a headerless JWT token let reconstruct it using the custom function
+      if (options.headless && typeof options.headless === 'object' && isHeadless(token)) {
+        token = `${Buffer.from(JSON.stringify(options.headless)).toString('base64')}.${token}`;
+      }
+
+
+      // quick check for validity of token format
+      if (!isValid(token)) {
+        return h.unauthenticated(raiseError('unauthorized',
+          'Invalid token format', tokenType), { credentials: token });
+      }
+      // verification is done later, but we want to avoid decoding if malformed
       request.auth.token = token; // keep encoded JWT available in the request
       // otherwise use the same key (String) to validate all JWTs
-
       try {
         decoded = jwt.decode(token, { complete: options.complete || false });
-      } catch (e) { // request should still FAIL if the token does not decode.
-        return raiseError('unauthorized', 'Invalid token format', tokenType);
+      } catch (e) {
+        return h.unauthenticated(raiseError('unauthorized',
+          'Invalid token format', tokenType), { credentials: token });
       }
+      const { key, ...extraInfo } = isFunction(options.key) ? await options.key(decoded) : { key: options.key };
+      // if keyFunc is function allow dynamic key lookup: https://git.io/vXjvY
+      if (typeof options.validate === 'function') {
 
-      if (options.key && typeof options.validateFunc === 'function') {
-        // if keyFunc is function allow dynamic key lookup: https://git.io/vXjvY
-        keyFunc = (isFunction(options.key))
-          ? options.key : (decoded_token: any) => {
-            return options.key;
-          };
+        const verifyOptions = options.verifyOptions || {};
+        const keys = (Array.isArray(key)) ? key : [key];
+        const keysTried = 0;
 
-        keyFunc(decoded, (err: any, key: any, extraInfo: any) => {
-          const verifyOptions = options.verifyOptions || {};
-          const keys = (isArray(key)) ? key : [key];
-          let keysTried = 0;
-          let err_message;
+        if (extraInfo) {
+          request.plugins[pkg.name] = { extraInfo };
+        }
 
-          if (err) {
-            return raiseError('wrap', err);
-          }
-          if (extraInfo) {
-            request.plugins[pkg.name] = { extraInfo };
-          }
+        let k;
+        for (let i = 0; i < keys.length; ++i) {
+          k = keys[i];
+          let verify_decoded;
 
-          keys.some((k) => { // itterate through one or more JWT keys
-            jwt.verify(token, k, verifyOptions,
-              (verify_err, verify_decoded) => {
-                if (verify_err) {
-                  keysTried++;
-
-                  if (keysTried >= keys.length) {
-                    err_message = verify_err.message === 'jwt expired'
-                      ? 'Expired token' : 'Invalid token';
-
-                    return h(raiseError('unauthorized',
-                      err_message, tokenType), null, { credentials: null });
-                  }
-                  // There are still other keys that might work
-
-                  // return false;
-                } else { // see: http://hapijs.com/tutorials/auth for validateFunc signature
-
-                  return options.validateFunc(verify_decoded, request,
-                    (validate_err: boolean, valid: boolean, credentials: any) => { // bring your own checks
-                      if (validate_err) {
-                        return raiseError('wrap', validate_err);
-                      }
-
-                      if (!valid) {
-                        h(raiseError('unauthorized',
-                          'Invalid credentials', tokenType), null,
-                          { credentials: credentials || verify_decoded });
-
-                      } else {
-                        h.continue({
-                          credentials: credentials || verify_decoded,
-                          artifacts: token,
-                        });
-                      }
-
-                      return false;
-                    });
-                }
-
-                return false;
-              });
-
-            return false;
-          });
-
-          return true;
-        }); // END keyFunc
-
-      } else { // see: https://github.com/dwyl/hapi-auth-jwt2/issues/130
-        return options.verifyFunc(decoded, request,
-          (verify_error: boolean, valid: boolean, credentials: any) => {
-            if (verify_error) {
-              return raiseError('wrap', verify_error);
+          try {
+            verify_decoded = jwt.verify(token, k, verifyOptions);
+          } catch (verify_err) {
+            if (i >= keys.length - 1) {
+              // we have exhausted all keys and still fail
+              const err_message = (verify_err.message === 'jwt expired' ? 'Expired token' : 'Invalid token');
+              return h.unauthenticated(raiseError('unauthorized',
+                err_message, tokenType), { credentials: token });
             }
+            // verification failed but there are still keys to try
+            continue;
+          }
 
+          try {
+            const { valid, credentials, response } = await options.validate(verify_decoded, request, h);
+            if (response !== undefined) {
+              return h.response(response).takeover();
+            }
             if (!valid) {
-              h(raiseError('unauthorized', 'Invalid credentials', tokenType), null, { credentials: decoded });
-            } else {
-              h.continue({
-                credentials: credentials || decoded,
-                artifacts: token,
-              });
+              // invalid credentials
+              return h.unauthenticated(raiseError('unauthorized',
+                'Invalid credentials', tokenType),
+                { credentials: decoded });
             }
 
-            return true;
-          });
+            // valid key and credentials
+            return h.authenticated({
+              credentials: credentials && typeof credentials === 'object' ? credentials : decoded,
+              artifacts: token,
+            });
+
+          } catch (validate_err) {
+            return h.unauthenticated(raiseError('boomify', validate_err), { credentials: decoded })
+          }
+        }
       }
 
-      return true;
+      // see: https://github.com/dwyl/hapi-auth-jwt2/issues/130
+      try {
+        const { valid, credentials } = await options.verify(decoded, request);
+        if (!valid) {
+          return h.unauthenticated(raiseError('unauthorized', 'Invalid credentials',
+            tokenType), { credentials: decoded });
+        }
+        return h.authenticated({
+          credentials: credentials || decoded,
+          artifacts: token,
+        });
+      } catch (verify_error) {
+        return h.unauthenticated(raiseError('boomify', verify_error), { credentials: decoded })
+      }
     },
 
     // payload is an Optional method called if an options.payload is set.
@@ -219,26 +206,20 @@ const implementation = (server: any, options: any): any => {
      * response is an Optional method called if an options.responseFunc is set.
      * @param {Object} request - the standard route handler request object
      * @param {Object} h - the standard hapi reply interface ...
-     * after we run the custom options.responseFunc we reply.continue to execute
+     * after we run the custom options.responseFunc we h.continue to execute
      * the next plugin in the list.
      * @returns {Boolean} true. always return true (unless there's an error...)
      */
-    response: (request: any, h: any) => {
+    response: (request: Request, h: ResponseToolkit) => {
       if (options.responseFunc && typeof options.responseFunc === 'function') {
-        options.responseFunc(request, h, (err) => {
-          if (err) {
-            return raiseError('wrap', err);
-          } else {
-            h.continue();
-          }
-        });
-      } else {
-        h.continue();
+        try {
+          // allow responseFunc to decorate or throw
+          options.responseFunc(request, h);
+        } catch (err) {
+          throw raiseError('boomify', err);
+        }
       }
-
-      return true;
+      return h.continue;
     },
-    // allow custom authentication via options.payload
-    payload: options.payload, // see: github.com/dwyl/hapi-auth-jwt2/pull/240
   };
 };

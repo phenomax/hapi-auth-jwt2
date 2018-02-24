@@ -57,3 +57,13 @@ export const extract = (request: any, options: any): any => {
 export const isValid = (token: any): boolean => {
   return token.split('.').length === 3;
 };
+
+/**
+ * isHeadless is a check to see if the header section of the JWT exists
+ *
+ * @param token - the token extracted from Header/Cookie/query
+ * @returns {boolean} true|false - true if JWT is without a header section, false if it is not
+ */
+export const isHeadless = (token: string): boolean => {
+  return token.split('.').length === 2;
+};
