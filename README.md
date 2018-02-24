@@ -1,5 +1,8 @@
 # Hapi Auth using JSON Web Tokens (JWT)
 
+**Note**
+This is a personal update for Hapi v17 using TypeScript.
+
 ***The*** authentication scheme/plugin for
 [**Hapi.js**](http://hapijs.com/) apps using **JSON Web Tokens**
 

@@ -1,0 +1,62 @@
+{
+  "compileOnSave": false,
+  "buildOnSave": false,
+  "atom": {
+    "rewriteTsconfig": false
+  },
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": false,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "alwaysStrict": true,
+    "baseUrl": "src/",
+    "charset": "utf8",
+    "declaration": false,
+    "diagnostics": false,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "forceConsistentCasingInFileNames": true,
+    "importHelpers": true,
+    "locale": "en",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "newLine": "lf",
+    "noEmit": false,
+    "noEmitHelpers": true,
+    "noEmitOnError": false,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": false,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noImplicitUseStrict": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "outDir": "build",
+    "pretty": true,
+    "removeComments": true,
+    "sourceMap": true,
+    "strictNullChecks": false,
+    "target": "es2016",
+    "lib": [
+      "es2017",
+      "es2016",
+      "es2015",
+      "esnext"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/*.ts",
+    "src/lib/*.ts",
+    "src/lib/**/*.ts",
+    "src/interfaces/*.ts",
+    "src/interfaces/**/*.ts",
+    "src/types/**.ts",
+    "src/types/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

@@ -1,6 +1,7 @@
-'use strict';
-
-var Cookie = require('cookie'); // highly popular decoupled cookie parser
+/**
+ * npm dependencies
+ */
+import * as cookie from 'cookie';  // highly popular decoupled cookie parser
 
 /**
  * customOrDefaultKey is a re-useable method to determing if the developer
@@ -10,25 +11,26 @@ var Cookie = require('cookie'); // highly popular decoupled cookie parser
  * @param {String} _default - the default key used if no custom is defined.
  * @returns {String} key - the custom key or default key.
  */
-function customOrDefaultKey (options, key, _default) {
+export const customOrDefaultKey = (options: any, key: string, _default: string): string => {
   return options[key] === false
-  || typeof options[key] === 'string' ? options[key] : _default;
-}
+    || typeof options[key] === 'string' ? options[key] : _default;
+};
 
- /**
-  * Extract the JWT from URL, Auth Header or Cookie
-  * @param {Object} request - standard hapi request object inclduing headers
-  * @param {Object} options - the configuration options defined by the person
-  * using the plugin. this includes relevant keys. (see docs in Readme)
-  * @returns {String} token - the raw JSON Webtoken or `null` if invalid
-  */
-module.exports = function extract (request, options) {
+/**
+ * Extract the JWT from URL, Auth Header or Cookie
+ * @param {Object} request - standard hapi request object inclduing headers
+ * @param {Object} options - the configuration options defined by the person
+ * using the plugin. this includes relevant keys. (see docs in Readme)
+ * @returns {String} token - the raw JSON Webtoken or `null` if invalid
+ */
+export const extract = (request: any, options: any): any => {
   // The key holding token value in url or cookie defaults to token
-  var auth, token;
-  var cookieKey = customOrDefaultKey(options, 'cookieKey', 'token');
-  var headerKey = customOrDefaultKey(options, 'headerKey', 'authorization');
-  var urlKey = customOrDefaultKey(options, 'urlKey', 'token');
-  var pattern = new RegExp(options.tokenType + '\\s+([^$]+)', 'i');
+  let auth;
+  let token;
+  const cookieKey = customOrDefaultKey(options, 'cookieKey', 'token');
+  const headerKey = customOrDefaultKey(options, 'headerKey', 'authorization');
+  const urlKey = customOrDefaultKey(options, 'urlKey', 'token');
+  const pattern = new RegExp(options.tokenType + '\\s+([^$]+)', 'i');
 
   if (urlKey && request.query[urlKey]) { // tokens via url: https://github.com/dwyl/hapi-auth-jwt2/issues/19
     auth = request.query[urlKey];
@@ -40,7 +42,7 @@ module.exports = function extract (request, options) {
       auth = request.headers[headerKey];
     } // JWT tokens in cookie: https://github.com/dwyl/hapi-auth-jwt2/issues/55
   } else if (cookieKey && request.headers.cookie) {
-    auth = Cookie.parse(request.headers.cookie)[cookieKey];
+    auth = cookie.parse(request.headers.cookie)[cookieKey];
   }
 
   // strip pointless "Bearer " label & any whitespace > http://git.io/xP4F
@@ -52,6 +54,6 @@ module.exports = function extract (request, options) {
  * @param {String} token - the token extracted from Header/Cookie/query
  * @returns {Boolean} true|false - true if JWT is valid. false if invalid.
  */
-module.exports.isValid = function isValid (token) {
+export const isValid = (token: any): boolean => {
   return token.split('.').length === 3;
 };
